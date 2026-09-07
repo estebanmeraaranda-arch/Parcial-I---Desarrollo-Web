@@ -62,6 +62,7 @@ function renderExpenseList(data) {
     const list = document.getElementById('gastos-lista');
     const view = document.getElementById('filtro-gastos').value;
     const filteredExpenses = filterExpenses(data.dailyExpenses);
+    const fixedDetail = data.fixedExpenseDetail;
     list.innerHTML = '';
 
     if (view === 'monthly') {
@@ -80,16 +81,19 @@ function renderExpenseList(data) {
         return;
     }
 
-    document.getElementById('gastos-count').textContent = `${filteredExpenses.length} registro${filteredExpenses.length === 1 ? '' : 's'}`;
-    if (!filteredExpenses.length) {
+    const visibleExpenses = fixedDetail ? [{ ...fixedDetail, isFixed: true }, ...filteredExpenses] : filteredExpenses;
+    document.getElementById('gastos-count').textContent = `${visibleExpenses.length} registro${visibleExpenses.length === 1 ? '' : 's'}`;
+    if (!visibleExpenses.length) {
         list.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Aun no tienes gastos diarios registrados.</td></tr>';
         return;
     }
-    filteredExpenses.slice().reverse().forEach((expense) => {
+    visibleExpenses.slice().reverse().forEach((expense) => {
         const index = data.dailyExpenses.indexOf(expense);
         const row = document.createElement('tr');
         const sharedLabel = expense.shared ? ` · Compartido (${expense.splitMode === 'percentage' ? `${expense.splitValue}%` : `${expense.splitValue} personas`})` : '';
-        row.innerHTML = `<td>${expense.date}</td><td><strong>${expense.description}</strong><br><small class="text-muted">${expense.category}${sharedLabel}</small></td><td class="text-right font-weight-bold">${money(personalAmount(expense))}</td><td class="text-right"><button class="btn btn-sm btn-light text-danger remove-expense" data-index="${index}" title="Eliminar gasto"><i class="fas fa-trash"></i></button></td>`;
+        const fixedLabel = expense.isFixed ? ' · Gasto fijo mensual' : '';
+        const deleteButton = expense.isFixed ? '' : `<button class="btn btn-sm btn-light text-danger remove-expense" data-index="${index}" title="Eliminar gasto"><i class="fas fa-trash"></i></button>`;
+        row.innerHTML = `<td>${expense.date || 'Mensual'}</td><td><strong>${expense.description}</strong><br><small class="text-muted">${expense.category}${fixedLabel}${sharedLabel}</small></td><td class="text-right font-weight-bold">${money(personalAmount(expense))}</td><td class="text-right">${deleteButton}</td>`;
         list.appendChild(row);
     });
     document.querySelectorAll('.remove-expense').forEach((button) => button.addEventListener('click', () => {
@@ -131,11 +135,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('form-caracterizacion').addEventListener('submit', (event) => {
         event.preventDefault();
         const totalIngresos = valueOf('ingreso-principal') + valueOf('ingreso-adicional');
+        const concepto = document.getElementById('concepto-gasto-fijo').value.trim();
         const montoTotal = valueOf('monto-gasto-fijo');
         const gastoCompartido = document.getElementById('gasto-fijo-compartido').checked;
         const porcentajeAporte = valueOf('porcentaje-gasto-fijo');
         const gastoFijoReal = gastoCompartido ? montoTotal * porcentajeAporte / 100 : montoTotal;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ income: totalIngresos, fixedExpenses: gastoFijoReal, dailyExpenses: [] }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            income: totalIngresos,
+            fixedExpenses: gastoFijoReal,
+            fixedExpenseDetail: { description: concepto, category: 'Gasto fijo', amount: montoTotal, personalAmount: gastoFijoReal, shared: gastoCompartido, splitMode: 'percentage', splitValue: gastoCompartido ? porcentajeAporte : null },
+            dailyExpenses: []
+        }));
         render();
     });
     document.getElementById('form-gasto').addEventListener('submit', (event) => {
