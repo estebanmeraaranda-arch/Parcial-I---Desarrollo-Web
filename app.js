@@ -62,7 +62,7 @@ function renderExpenseList(data) {
     const list = document.getElementById('gastos-lista');
     const view = document.getElementById('filtro-gastos').value;
     const filteredExpenses = filterExpenses(data.dailyExpenses);
-    const fixedDetail = data.fixedExpenseDetail;
+    const fixedDetails = data.fixedExpenseDetails || (data.fixedExpenseDetail ? [data.fixedExpenseDetail] : []);
     list.innerHTML = '';
 
     if (view === 'monthly') {
@@ -81,7 +81,7 @@ function renderExpenseList(data) {
         return;
     }
 
-    const visibleExpenses = fixedDetail ? [{ ...fixedDetail, isFixed: true }, ...filteredExpenses] : filteredExpenses;
+    const visibleExpenses = [...fixedDetails.map((expense) => ({ ...expense, isFixed: true })), ...filteredExpenses];
     document.getElementById('gastos-count').textContent = `${visibleExpenses.length} registro${visibleExpenses.length === 1 ? '' : 's'}`;
     if (!visibleExpenses.length) {
         list.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Aun no tienes gastos diarios registrados.</td></tr>';
@@ -104,6 +104,20 @@ function renderExpenseList(data) {
     }));
 }
 
+function addIncomeRow() {
+    document.getElementById('ingresos-extra').insertAdjacentHTML('beforeend', '<div class="income-extra-row form-row align-items-end mt-3"><div class="col"><label>Otro ingreso</label><input class="form-control income-input" type="number" min="0" placeholder="0"></div><div class="col-auto"><button class="btn btn-light text-danger remove-income" type="button" title="Quitar ingreso"><i class="fas fa-times"></i></button></div></div>');
+}
+
+function addFixedExpenseRow() {
+    document.getElementById('gastos-fijos-extra').insertAdjacentHTML('beforeend', '<div class="fixed-extra-row row align-items-end border-top pt-3 mt-3"><div class="col-md-3 mb-3"><label>Concepto</label><input class="form-control fixed-concept" type="text" placeholder="Ej. Servicios"></div><div class="col-md-3 mb-3"><label>Monto Total</label><div class="input-group"><div class="input-group-prepend"><span class="input-group-text">$</span></div><input class="form-control fixed-amount" type="number" min="0" placeholder="0"></div></div><div class="col-md-3 mb-3"><div class="mb-2"><div class="custom-control custom-switch"><input class="custom-control-input fixed-shared" type="checkbox"><label class="custom-control-label">¿Es compartido?</label></div><small class="text-muted d-block">Opcional</small></div></div><div class="col-md-3 mb-3"><div class="fixed-portion d-none"><label>% de Aporte</label><div class="input-group"><input class="form-control fixed-percentage" type="number" min="1" max="100" placeholder="50"><div class="input-group-append"><span class="input-group-text">%</span></div></div></div><button class="btn btn-light text-danger btn-sm remove-fixed" type="button"><i class="fas fa-times mr-1"></i>Quitar</button></div></div>');
+}
+
+function readFixedExpense(concept, amount, shared, percentage) {
+    if (!concept || amount <= 0) return null;
+    const realAmount = shared ? amount * percentage / 100 : amount;
+    return { description: concept, category: 'Gasto fijo', amount, personalAmount: realAmount, shared, splitMode: 'percentage', splitValue: shared ? percentage : null };
+}
+
 function render() {
     const data = getData();
     const configured = Boolean(data);
@@ -123,6 +137,24 @@ function render() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('agregar-ingreso').addEventListener('click', addIncomeRow);
+    document.getElementById('ingresos-extra').addEventListener('click', (event) => {
+        const removeButton = event.target.closest('.remove-income');
+        if (removeButton) removeButton.closest('.income-extra-row').remove();
+    });
+    document.getElementById('agregar-gasto-fijo').addEventListener('click', addFixedExpenseRow);
+    document.getElementById('gastos-fijos-extra').addEventListener('change', (event) => {
+        if (!event.target.classList.contains('fixed-shared')) return;
+        const row = event.target.closest('.fixed-extra-row');
+        const portion = row.querySelector('.fixed-portion');
+        const percentage = row.querySelector('.fixed-percentage');
+        portion.classList.toggle('d-none', !event.target.checked);
+        percentage.required = event.target.checked;
+    });
+    document.getElementById('gastos-fijos-extra').addEventListener('click', (event) => {
+        const removeButton = event.target.closest('.remove-fixed');
+        if (removeButton) removeButton.closest('.fixed-extra-row').remove();
+    });
     document.getElementById('gasto-fijo-compartido').addEventListener('change', (event) => {
         const aporte = document.getElementById('aporte-gasto-fijo');
         const porcentaje = document.getElementById('porcentaje-gasto-fijo');
@@ -134,16 +166,24 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('porcentaje-gasto-fijo').addEventListener('input', updateFixedExpensePreview);
     document.getElementById('form-caracterizacion').addEventListener('submit', (event) => {
         event.preventDefault();
-        const totalIngresos = valueOf('ingreso-principal') + valueOf('ingreso-adicional');
+        const totalIngresos = [...document.querySelectorAll('.income-input')].reduce((total, input) => total + (Number(input.value) || 0), 0);
         const concepto = document.getElementById('concepto-gasto-fijo').value.trim();
         const montoTotal = valueOf('monto-gasto-fijo');
         const gastoCompartido = document.getElementById('gasto-fijo-compartido').checked;
         const porcentajeAporte = valueOf('porcentaje-gasto-fijo');
-        const gastoFijoReal = gastoCompartido ? montoTotal * porcentajeAporte / 100 : montoTotal;
+        const fixedDetails = [];
+        const mainFixed = readFixedExpense(concepto, montoTotal, gastoCompartido, porcentajeAporte);
+        if (mainFixed) fixedDetails.push(mainFixed);
+        document.querySelectorAll('.fixed-extra-row').forEach((row) => {
+            const detail = readFixedExpense(row.querySelector('.fixed-concept').value.trim(), Number(row.querySelector('.fixed-amount').value) || 0, row.querySelector('.fixed-shared').checked, Number(row.querySelector('.fixed-percentage').value) || 0);
+            if (detail) fixedDetails.push(detail);
+        });
+        const gastoFijoReal = fixedDetails.reduce((total, detail) => total + detail.personalAmount, 0);
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
             income: totalIngresos,
             fixedExpenses: gastoFijoReal,
-            fixedExpenseDetail: { description: concepto, category: 'Gasto fijo', amount: montoTotal, personalAmount: gastoFijoReal, shared: gastoCompartido, splitMode: 'percentage', splitValue: gastoCompartido ? porcentajeAporte : null },
+            fixedExpenseDetail: fixedDetails[0] || null,
+            fixedExpenseDetails: fixedDetails,
             dailyExpenses: []
         }));
         render();
