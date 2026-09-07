@@ -30,6 +30,14 @@ function updateContributionPreview() {
     document.getElementById('ayuda-dividir').textContent = mode === 'percentage' ? 'Indica qué porcentaje del total pagas tú.' : 'Indica entre cuántas personas se divide el total.';
 }
 
+function updateFixedExpensePreview() {
+    const amount = valueOf('monto-gasto-fijo');
+    const shared = document.getElementById('gasto-fijo-compartido').checked;
+    const percentage = valueOf('porcentaje-gasto-fijo');
+    const realAmount = shared ? amount * percentage / 100 : amount;
+    document.getElementById('preview-fijo-real').textContent = realAmount ? `Valor real: ${money(realAmount)}` : '';
+}
+
 function personalAmount(expense) { return expense.personalAmount ?? expense.amount; }
 
 function filterExpenses(expenses) {
@@ -111,9 +119,23 @@ function render() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('gasto-fijo-compartido').addEventListener('change', (event) => {
+        const aporte = document.getElementById('aporte-gasto-fijo');
+        const porcentaje = document.getElementById('porcentaje-gasto-fijo');
+        aporte.classList.toggle('d-none', !event.target.checked);
+        porcentaje.required = event.target.checked;
+        updateFixedExpensePreview();
+    });
+    document.getElementById('monto-gasto-fijo').addEventListener('input', updateFixedExpensePreview);
+    document.getElementById('porcentaje-gasto-fijo').addEventListener('input', updateFixedExpensePreview);
     document.getElementById('form-caracterizacion').addEventListener('submit', (event) => {
         event.preventDefault();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ income: valueOf('ingresos'), fixedExpenses: valueOf('gastos-fijos'), dailyExpenses: [] }));
+        const totalIngresos = valueOf('ingreso-principal') + valueOf('ingreso-adicional');
+        const montoTotal = valueOf('monto-gasto-fijo');
+        const gastoCompartido = document.getElementById('gasto-fijo-compartido').checked;
+        const porcentajeAporte = valueOf('porcentaje-gasto-fijo');
+        const gastoFijoReal = gastoCompartido ? montoTotal * porcentajeAporte / 100 : montoTotal;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ income: totalIngresos, fixedExpenses: gastoFijoReal, dailyExpenses: [] }));
         render();
     });
     document.getElementById('form-gasto').addEventListener('submit', (event) => {
@@ -140,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fecha-especifica').addEventListener('change', () => render());
     document.getElementById('fecha-desde').addEventListener('change', () => render());
     document.getElementById('fecha-hasta').addEventListener('change', () => render());
-    document.getElementById('btn-reset').addEventListener('click', () => { localStorage.removeItem(STORAGE_KEY); render(); });
+    document.getElementById('btn-reset').addEventListener('click', () => { localStorage.removeItem(STORAGE_KEY); location.reload(); });
     document.getElementById('fecha-gasto').valueAsDate = new Date();
     updateSharedOptions();
     render();
